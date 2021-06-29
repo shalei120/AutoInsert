@@ -1,0 +1,60 @@
+
+	GCC 5.5.0 environment now loaded
+
+
+	CUDA-9.2 loaded
+
+
+Loading cuda/9.2
+  Loading requirement: gcc5/5.5.0
+0
+Tue Jun 29 18:52:10 2021       
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 450.102.04   Driver Version: 450.102.04   CUDA Version: 11.0     |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|                               |                      |               MIG M. |
+|===============================+======================+======================|
+|   0  Tesla V100-SXM2...  On   | 00000000:0A:00.0 Off |                    0 |
+| N/A   48C    P0    72W / 300W |      0MiB / 16160MiB |      0%      Default |
+|                               |                      |                  N/A |
++-------------------------------+----------------------+----------------------+
+                                                                               
++-----------------------------------------------------------------------------+
+| Processes:                                                                  |
+|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
+|        ID   ID                                                   Usage      |
+|=============================================================================|
+|  No running processes found                                                 |
++-----------------------------------------------------------------------------+
+/jmain01/home/JAD015/ttl03/lxs80-ttl03/AutoInsert
+Traceback (most recent call last):
+  File "textdata.py", line 11, in <module>
+    from Hyperparameters import args
+ModuleNotFoundError: No module named 'Hyperparameters'
+2021-06-29 18:53:24 | INFO | fairseq_cli.preprocess | Namespace(align_suffix=None, alignfile=None, all_gather_list_size=16384, amp=False, amp_batch_retries=2, amp_init_scale=128, amp_scale_window=None, azureml_logging=False, bf16=False, bpe=None, cpu=False, criterion='cross_entropy', dataset_impl='mmap', destdir='artifacts/preprocessed/', dict_only=False, empty_cache_freq=0, fp16=False, fp16_init_scale=128, fp16_no_flatten_grads=False, fp16_scale_tolerance=0.0, fp16_scale_window=None, joined_dictionary=False, log_file=None, log_format=None, log_interval=100, lr_scheduler='fixed', memory_efficient_bf16=False, memory_efficient_fp16=False, min_loss_scale=0.0001, model_parallel_size=1, no_progress_bar=False, nwordssrc=-1, nwordstgt=-1, on_cpu_convert_precision=False, only_source=False, optimizer=None, padding_factor=8, plasma_path='/tmp/plasma', profile=False, quantization_config_path=None, reset_logging=False, scoring='bleu', seed=1, simul_type=None, source_lang='de', srcdict=None, suppress_crashes=False, target_lang='en', task='translation', tensorboard_logdir=None, testpref='artifacts/fsdata/test', tgtdict=None, threshold_loss_scale=None, thresholdsrc=0, thresholdtgt=0, tokenizer=None, tpu=False, trainpref='artifacts/fsdata/train', use_plasma_view=False, user_dir=None, validpref='artifacts/fsdata/valid', wandb_project=None, workers=20)
+Traceback (most recent call last):
+  File "fairseq/fairseq_cli/preprocess.py", line 407, in <module>
+    cli_main()
+  File "fairseq/fairseq_cli/preprocess.py", line 403, in cli_main
+    main(args)
+  File "fairseq/fairseq_cli/preprocess.py", line 103, in main
+    src_dict = build_dictionary([train_path(args.source_lang)], src=True)
+  File "fairseq/fairseq_cli/preprocess.py", line 63, in build_dictionary
+    return task.build_dictionary(
+  File "/jmain01/home/JAD015/ttl03/lxs80-ttl03/AutoInsert/fairseq/fairseq/tasks/fairseq_task.py", line 119, in build_dictionary
+    Dictionary.add_file_to_dictionary(
+  File "/jmain01/home/JAD015/ttl03/lxs80-ttl03/AutoInsert/fairseq/fairseq/data/dictionary.py", line 353, in add_file_to_dictionary
+    offsets = find_offsets(local_file, num_workers)
+  File "/jmain01/home/JAD015/ttl03/lxs80-ttl03/AutoInsert/fairseq/fairseq/file_chunker_utils.py", line 25, in find_offsets
+    with open(filename, "r", encoding="utf-8") as f:
+FileNotFoundError: [Errno 2] No such file or directory: 'artifacts/fsdata/train.de'
+Traceback (most recent call last):
+  File "main_mt.py", line 5, in <module>
+    from TranslationModel import TranslationModel
+  File "/jmain01/home/JAD015/ttl03/lxs80-ttl03/AutoInsert/TranslationModel.py", line 20, in <module>
+    from Transformer_for_MT import TransformerModel
+  File "/jmain01/home/JAD015/ttl03/lxs80-ttl03/AutoInsert/Transformer_for_MT.py", line 16, in <module>
+    from positional_embedding import PositionalEmbedding
+ModuleNotFoundError: No module named 'positional_embedding'
