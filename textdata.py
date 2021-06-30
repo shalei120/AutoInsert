@@ -253,6 +253,8 @@ class TextData_MT:
                         v.write('\n')
 
                 v.close()
+            os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt "+args['rootDir'] + "/preprocessed/dict.en.txt")
+            os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt "+args['rootDir'] + "/preprocessed/dict.de.txt")
 
             self.word2index = self.read_word2vec(args['rootDir'] + "/autoinsert_voc.txt")
             self.sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
@@ -362,10 +364,11 @@ class TextData_MT:
             with open(folder + setname + '.' + 'de', 'w') as src_h:
                 with open(folder + setname + '.' + 'en', 'w') as tgt_h:
                     for src, add, tgt in tqdm(self.dataset[setname]):
-                        str_src = src
+                        str_src = src[:9500]
+
                         for s in add:
                             str_src +=  ['<sep>'] +  s
-                        str_tgt = tgt
+                        str_tgt = tgt[:10000]
                         src_h.write(' '.join(str_src) + '\n')
                         tgt_h.write(' '.join(str_tgt) + '\n')
 
