@@ -1,6 +1,7 @@
 
 import numpy as np
 import nltk  # For tokenize
+from nltk.probability import FreqDist
 from tqdm import tqdm  # Progress bar
 import pickle  # Saving the data
 import math  # For float comparison
@@ -175,8 +176,10 @@ class TextData_MT:
     def loadCorpus(self, corpusname):
         """Load/create the conversations data
         """
-
-        self.basedir = './.data/'
+        if args['server'] == 'dgx':
+            self.basedir = './.data/'
+        else:
+            self.basedir = '../'
 
         if not os.path.exists(self.basedir):
             os.mkdir(self.basedir)
@@ -195,6 +198,8 @@ class TextData_MT:
             data_input_seqs = []
             data_add_seqs = []
             data_target_seqs = []
+            files = [f for f in files if 'json'  in f]
+            files = sorted(files, key=lambda x:int(x.split('.')[0]))
             for filename in files:
                 print(filename)
 
@@ -223,7 +228,7 @@ class TextData_MT:
 
             self.write_in_tmp_files(data_input_seqs, data_add_seqs, data_target_seqs)
 
-            learn_bpe(self.bpe_tmp_filename, args['rootDir'] + 'auto_insert.bpe', 37000, 6, True)
+            learn_bpe([self.bpe_tmp_filename], args['rootDir'] + 'auto_insert.bpe', 37000, 6, True)
             codes = codecs.open(args['rootDir'] + 'auto_insert.bpe', encoding='utf-8')
             bpe = BPE(codes, separator='@@')
 
@@ -243,7 +248,7 @@ class TextData_MT:
 
             fdist = nltk.FreqDist(total_words)
             sort_count = fdist.most_common(36000)
-            print('sort_count: ', l, ' ', len(sort_count))
+            print('sort_count: ', len(sort_count))
             with open(args['rootDir'] + "/autoinsert_voc.txt", "w") as v:
                 for w, c in tqdm(sort_count):
                     if w not in [' ', '', '\n']:
@@ -350,25 +355,34 @@ class TextData_MT:
                 #     print('id>20000:', w,id)
                 res.append(id)
             else:
-                res.append(self.word2index['UNK'])
+                res.append(self.word2index['<unk>'])
         return res
 
     def write_fairseq_dataset(self):
         folder = args['rootDir'] + '/fsdata/'
         if not os.path.exists(folder):
             os.mkdir(folder)
-
+        src_len = []
+        tgt_len = []
         for setname in ['train', 'valid', 'test']:
             with open(folder + setname + '.' + 'de', 'w') as src_h:
                 with open(folder + setname + '.' + 'en', 'w') as tgt_h:
-                    for src, add, tgt in tqdm(self.dataset[setname]):
+                     for _,_,_,src, add, tgt in tqdm(self.datasets[setname]):
                         str_src = src
                         for s in add:
                             str_src +=  ['<sep>'] +  s
                         str_tgt = tgt
                         src_h.write(' '.join(str_src) + '\n')
                         tgt_h.write(' '.join(str_tgt) + '\n')
+                        src_len.append(len(str_src))
+                        tgt_len.append(len(str_tgt))
+
+        # cfdist = FreqDist(src_len)
+        # cfdist.plot()
+        print(src_len)
+        print(tgt_len)
 
 
 if __name__ == '__main__':
+    args['server'] = 'local'
     TextData_MT('MT')
