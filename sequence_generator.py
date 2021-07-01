@@ -66,9 +66,9 @@ class SequenceGenerator(nn.Module):
         else:
             self.model = EnsembleModel(models)
         self.tgt_dict = tgt_dict
-        self.pad = tgt_dict['PAD']
-        self.unk = tgt_dict['UNK']
-        self.eos = tgt_dict['END_TOKEN'] if eos is None else eos
+        self.pad = tgt_dict['<pad>']
+        self.unk = tgt_dict['<unk>']
+        self.eos = tgt_dict['</s>'] if eos is None else eos
         self.symbols_to_strip_from_output = (
             symbols_to_strip_from_output.union({self.eos})
             if symbols_to_strip_from_output is not None

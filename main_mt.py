@@ -4,7 +4,7 @@ import functools
 print = functools.partial(print, flush=True)
 from TranslationModel import TranslationModel
 
-from textdata_MT_preprocessed import  TextData_MT
+from textdata import  TextData_MT
 import time, sys,datetime
 import torch
 import torch.autograd as autograd
@@ -164,40 +164,41 @@ class Runner:
 
         args['maxLengthEnco'] = args['maxLength'] = 200
         args['maxLengthDeco'] =  args['maxLengthEnco'] + 1
-        self.start_token = self.textData.word2index[args['typename']][self.l2]['START_TOKEN']
-        self.end_token = self.textData.word2index[args['typename']][self.l2]['END_TOKEN']
+        self.start_token = self.textData.word2index['<s>']
+        self.end_token = self.textData.word2index['</s>']
         torch.manual_seed(0)
 
         self.task = tasks.setup_task(dictconfig.DictConfig(
-            {'_name': 'translation', 'data': 'data-bin/iwslt14.tokenized.de-en', 'source_lang': None,
+            {'_name': 'translation', 'data': args['rootDir'] + 'preprocessed', 'source_lang': None,
              'target_lang': None, 'load_alignments': False, 'left_pad_source': True, 'left_pad_target': False,
-             'max_source_positions': 1024, 'max_target_positions': 1024, 'upsample_primary': -1,
+             'max_source_positions': 10000, 'max_target_positions': 10000, 'upsample_primary': -1,
              'truncate_source': False, 'num_batch_buckets': 0, 'train_subset': 'train', 'dataset_impl': None,
              'required_seq_len_multiple': 1, 'eval_bleu': True,
              'eval_bleu_args': '{"beam":5,"max_len_a":1.2,"max_len_b":10}', 'eval_bleu_detok': 'moses',
              'eval_bleu_detok_args': '{}', 'eval_tokenized_bleu': False, 'eval_bleu_remove_bpe': '@@ ',
              'eval_bleu_print_samples': True}))
 
-        self.change_word(self.task.src_dict)
-        self.change_word(self.task.tgt_dict)
-        self.textData.word2index[args['typename']][self.l1] = self.task.src_dict.indices
-        self.textData.index2word[args['typename']][self.l1] =  self.task.src_dict.symbols
-        self.textData.word2index[args['typename']][self.l2]= self.task.tgt_dict.indices
-        self.textData.index2word[args['typename']][self.l2] =  self.task.tgt_dict.symbols
-        args['vocabularySize_src'] = self.textData.getVocabularySize(args['typename'], self.l1)
-        args['vocabularySize_tgt'] = self.textData.getVocabularySize(args['typename'], self.l2)
+        # self.change_word(self.task.src_dict)
+        # self.change_word(self.task.tgt_dict)
+        # self.textData.word2index = self.task.src_dict.indices
+        # self.textData.index2word=  self.task.src_dict.symbols
+        self.task.src_dict.indices = self.textData.word2index
+        self.task.src_dict.symbols = self.textData.index2word
+        # self.textData.word2index[args['typename']][self.l2]= self.task.tgt_dict.indices
+        # self.textData.index2word[args['typename']][self.l2] =  self.task.tgt_dict.symbols
+        args['vocabularySize'] = self.textData.getVocabularySize()
 
-        print(args['vocabularySize_src'], args['vocabularySize_tgt'])
+        print(args['vocabularySize'])
         print(args)
         self.task.load_dataset('valid', combine=False, epoch=1)
         self.train_itr = self.get_train_iterator(
             epoch=1, load_dataset=True
         )
 
-        self.model = TranslationModel(self.textData.word2index[args['typename']][self.l1],
-                                      self.textData.index2word[args['typename']][self.l1],
-                                      self.textData.word2index[args['typename']][self.l2],
-                                      self.textData.index2word[args['typename']][self.l2]).to(args['device'])
+        self.model = TranslationModel(self.textData.word2index,
+                                      self.textData.index2word,
+                                      self.textData.word2index,
+                                      self.textData.index2word).to(args['device'])
         self.sequence_generator = self.model.sequence_generator
         self.criterion = self.task.build_criterion(dictconfig.DictConfig({'_name': 'label_smoothed_cross_entropy', 'label_smoothing': 0.1, 'report_accuracy': False, 'ignore_prefix_size': 0, 'sentence_avg': False}))
         # self.model = torch.load(self.model_path.replace('model', 'model_'+'fw'), map_location=args['device'])
@@ -249,7 +250,7 @@ class Runner:
         print_loss_total = 0  # Reset every print_every
         plot_loss_total = 0  # Reset every plot_every
 
-        print(type(self.textData.word2index[args['typename']]), args['device'])
+        print(type(self.textData.word2index), args['device'])
 
         # learning_rate =
         # optimizer = optim.Adam(self.model.parameters(), lr=0.001,betas=(0.9, 0.98), eps=1e-08, weight_decay = 0.0001)#, amsgrad=True)
@@ -265,7 +266,7 @@ class Runner:
             optimizer,
         )
         iter = 1
-        batches = self.textData.getBatches(args['typename'], tgt_lang = self.l2)
+        batches = self.textData.getBatches()
         n_iters = len(batches)
         print('niters ',n_iters)
 
@@ -439,7 +440,7 @@ class Runner:
         if not hasattr(self, 'testbatches' ):
             self.testbatches = {}
         if datasetname not in self.testbatches:
-            self.testbatches[datasetname] = self.textData.getBatches(args['typename'], setname=datasetname, tgt_lang = self.l2)
+            self.testbatches[datasetname] = self.textData.getBatches(setname=datasetname)
         self.model.eval()
         self.criterion.eval()
         num = 0
@@ -584,7 +585,7 @@ class Runner:
         """Return an EpochBatchIterator over given validation subset for a given epoch."""
         batch_iterator = self.task.get_batch_iterator(
             dataset=self.task.dataset(subset),
-            max_tokens=4096/2,
+            max_tokens=10000,
             max_sentences=None,
             max_positions=utils.resolve_max_positions(
                 self.task.max_positions(),
