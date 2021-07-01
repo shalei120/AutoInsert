@@ -37,7 +37,7 @@ class TranslationModel(nn.Module):
         self.max_length = args['maxLengthDeco']
         self.batch_size = args['batchSize']
         self.ignore_prefix_size = 0
-        self.padding_idx = enc_w2i['PAD']
+        self.padding_idx = enc_w2i['<pad>']
         self.dtype = 'float32'
 
         # self.embedding_src = nn.Embedding(args['vocabularySize_src'], args['embeddingSize']).to(args['device'])
@@ -322,13 +322,13 @@ class TranslationModel(nn.Module):
         # print([len(g) for g in gen_out])
         for i in range(len(gen_out)):
             h = decode(gen_out[i][0]["tokens"])
-            endpos = h.index('END_TOKEN')
+            endpos = h.index('</s>')
             h = h[:endpos]
             r=decode(
-                    utils.strip_pad(sample["target"][i], self.dec_word2index['PAD']),
+                    utils.strip_pad(sample["target"][i], self.dec_word2index['<pad>']),
                     escape_unk=True,  # don't count <unk> as matches to the hypo
                 )
-            ref_endpos = r.index('END_TOKEN')
+            ref_endpos = r.index('</s>')
             r = r[:ref_endpos]
             hyps.append(h)
             refs.append(r)
@@ -367,19 +367,19 @@ class TranslationModel(nn.Module):
             )
 
         extra_symbols_to_ignore = set(extra_symbols_to_ignore or [])
-        extra_symbols_to_ignore.add(tgt_dict['END_TOKEN'])
+        extra_symbols_to_ignore.add(tgt_dict['</s>'])
 
         def token_string(i):
-            if i == tgt_dict['UNK']:
+            if i == tgt_dict['<unk>']:
                 if unk_string is not None:
                     return unk_string
                 else:
-                    return tgt_dict['UNK']
+                    return tgt_dict['<unk>']
             else:
                 return self.dec_index2word[i]
 
-        if 'START_TOKEN' in  tgt_dict:
-            extra_symbols_to_ignore.add(tgt_dict['START_TOKEN'])
+        if '<s>' in  tgt_dict:
+            extra_symbols_to_ignore.add(tgt_dict['<s>'])
 
         sent = separator.join(
             token_string(i)

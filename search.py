@@ -19,9 +19,9 @@ from torch import Tensor
 class Search(nn.Module):
     def __init__(self, tgt_dict):
         super().__init__()
-        self.pad = tgt_dict['PAD']
-        self.unk = tgt_dict['UNK']
-        self.eos = tgt_dict['END_TOKEN']
+        self.pad = tgt_dict['<pad>']
+        self.unk = tgt_dict['<unk>']
+        self.eos = tgt_dict['</s>']
         self.vocab_size = len(tgt_dict)
         self.src_lengths = torch.tensor(-1)
         self.supports_constraints = False

@@ -45,6 +45,8 @@ class TextData_MT:
         # Path variables
         self.tokenizer = word_tokenize
 
+        if not os.path.exists(args['rootDir']):
+            os.mkdir(args['rootDir'])
 
         self.trainingSamples = []  # 2d array containing each question and his answer [[input,target]]
 
@@ -60,13 +62,13 @@ class TextData_MT:
         print('Loaded {}: {} words, {} QA'.format('LMbenchmark', len(self.word2index), len(self.trainingSamples)))
 
 
-    def shuffle(self, typename):
+    def shuffle(self):
         """Shuffle the training samples
         """
         print('Shuffling the dataset...')
-        random.shuffle(self.datasets[typename]['train'])
+        random.shuffle(self.datasets['train'])
 
-    def _createBatch(self, samples, tgt_lang):
+    def _createBatch(self, samples):
         """Create a single batch from the list of sample. The batch size is automatically defined by the number of
         samples given.
         The inputs should already be inverted. The target should already have <go> and <eos>
@@ -85,7 +87,7 @@ class TextData_MT:
         # Create the batch tensor
         for i in range(batchSize):
             # Unpack the sample
-            src_sample, tgt_sample, raw_src, raw_tgt = samples[i]
+            src_sample, add, tgt_sample, raw_src, raw_add, raw_tgt = samples[i]
 
             if len(src_sample) > maxlen_def:
                 src_sample = src_sample[:maxlen_def]
@@ -93,8 +95,8 @@ class TextData_MT:
                 tgt_sample = tgt_sample[:maxlen_def]
 
             batch.encoderSeqs.append(src_sample)
-            batch.decoderSeqs.append([self.word2index[args['typename']][tgt_lang]['START_TOKEN']] + tgt_sample)  # Add the <go> and <eos> tokens
-            batch.targetSeqs.append(tgt_sample + [self.word2index[args['typename']][tgt_lang]['END_TOKEN']])  # Same as decoder, but shifted to the left (ignore the <go>)
+            batch.decoderSeqs.append([self.word2index['<s>']] + tgt_sample)  # Add the <go> and <eos> tokens
+            batch.targetSeqs.append(tgt_sample + [self.word2index['</s>']])  # Same as decoder, but shifted to the left (ignore the <go>)
 
             assert len(batch.decoderSeqs[i]) <= maxlen_def +1
 
@@ -110,9 +112,9 @@ class TextData_MT:
 
 
         for i in range(batchSize):
-            batch.encoderSeqs[i] = batch.encoderSeqs[i] + [self.word2index[args['typename']][tgt_lang]['PAD']] * (maxlen_enc - len(batch.encoderSeqs[i]))
-            batch.decoderSeqs[i] = batch.decoderSeqs[i] + [self.word2index[args['typename']][tgt_lang]['PAD']] * (maxlen_dec - len(batch.decoderSeqs[i]))
-            batch.targetSeqs[i]  = batch.targetSeqs[i]  + [self.word2index[args['typename']][tgt_lang]['PAD']] * (maxlen_dec - len(batch.targetSeqs[i]))
+            batch.encoderSeqs[i] = batch.encoderSeqs[i] + [self.word2index['<pad>']] * (maxlen_enc - len(batch.encoderSeqs[i]))
+            batch.decoderSeqs[i] = batch.decoderSeqs[i] + [self.word2index['<pad>']] * (maxlen_dec - len(batch.decoderSeqs[i]))
+            batch.targetSeqs[i]  = batch.targetSeqs[i]  + [self.word2index['<pad>']] * (maxlen_dec - len(batch.targetSeqs[i]))
 
         # pre_sort_list = [(a, b, c) for a, b, c  in
         #                  zip( batch.decoderSeqs, batch.decoder_lens,
@@ -126,46 +128,46 @@ class TextData_MT:
 
         return batch
 
-    def getBatches(self, typename, tgt_lang,setname = 'train'):
+    def getBatches(self,setname = 'train'):
         """Prepare the batches for the current epoch
         Return:
             list<Batch>: Get a list of the batches for the next epoch
         """
-        self.shuffle(typename)
+        self.shuffle()
 
 
         batches = []
         batch_size = args['batchSize'] #if setname == 'train' else 32
-        print(len(self.datasets[typename][setname]), typename, setname, batch_size)
+        print(len(self.datasets[setname]), setname, batch_size)
         def genNextSamples():
             """ Generator over the mini-batch training samples
             """
-            for i in range(0, self.getSampleSize(typename, setname), batch_size):
-                yield self.datasets[typename][setname][i:min(i + batch_size, self.getSampleSize(typename, setname))]
+            for i in range(0, self.getSampleSize(setname), batch_size):
+                yield self.datasets[setname][i:min(i + batch_size, self.getSampleSize(setname))]
 
         # TODO: Should replace that by generator (better: by tf.queue)
 
         for index, samples in enumerate(genNextSamples()):
             # print([self.index2word[id] for id in samples[5][0]], samples[5][2])
-            batch = self._createBatch(samples, tgt_lang)
+            batch = self._createBatch(samples)
             batches.append(batch)
 
         # print([self.index2word[id] for id in batches[2].encoderSeqs[5]], batches[2].raws[5])
         return batches
 
-    def getSampleSize(self, typename, setname = 'train'):
+    def getSampleSize(self,setname):
         """Return the size of the dataset
         Return:
             int: Number of training samples
         """
-        return len(self.datasets[typename][setname])
+        return len(self.datasets[setname])
 
-    def getVocabularySize(self, typename, lang):
+    def getVocabularySize(self):
         """Return the number of words present in the dataset
         Return:
             int: Number of word on the loader corpus
         """
-        return len(self.word2index[typename][lang])
+        return len(self.word2index)
 
     def extract(self, tar_url, extract_path='.'):
         print(tar_url)
@@ -258,8 +260,8 @@ class TextData_MT:
                         v.write('\n')
 
                 v.close()
-            os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt "+args['rootDir'] + "/preprocessed/dict.en.txt")
-            os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt "+args['rootDir'] + "/preprocessed/dict.de.txt")
+            os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt "+args['rootDir'] + "/fsdata/dict.en.txt")
+            os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt "+args['rootDir'] + "/fsdata/dict.de.txt")
 
             self.word2index = self.read_word2vec(args['rootDir'] + "/autoinsert_voc.txt")
             self.sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
@@ -370,10 +372,10 @@ class TextData_MT:
             with open(folder + setname + '.' + 'de', 'w') as src_h:
                 with open(folder + setname + '.' + 'en', 'w') as tgt_h:
                      for _,_,_,src, add, tgt in tqdm(self.datasets[setname]):
-                        str_src = src[:9500]
+                        str_src = src[:1000]
                         for s in add:
                             str_src +=  ['<sep>'] +  s
-                        str_tgt = tgt[:10000]
+                        str_tgt = tgt[:1000]
                         src_h.write(' '.join(str_src) + '\n')
                         tgt_h.write(' '.join(str_tgt) + '\n')
                         src_len.append(len(str_src))
@@ -386,5 +388,5 @@ class TextData_MT:
 
 
 if __name__ == '__main__':
-    args['server'] = 'local'
+    args['server'] = 'dgx'
     TextData_MT('MT')
