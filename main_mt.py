@@ -182,8 +182,8 @@ class Runner:
         # self.change_word(self.task.tgt_dict)
         # self.textData.word2index = self.task.src_dict.indices
         # self.textData.index2word=  self.task.src_dict.symbols
-        self.task.src_dict.indices = self.textData.word2index
-        self.task.src_dict.symbols = self.textData.index2word
+        # self.task.src_dict.indices = self.textData.word2index
+        # self.task.src_dict.symbols = self.textData.index2word
         # self.textData.word2index[args['typename']][self.l2]= self.task.tgt_dict.indices
         # self.textData.index2word[args['typename']][self.l2] =  self.task.tgt_dict.symbols
         args['vocabularySize'] = self.textData.getVocabularySize()
@@ -195,10 +195,10 @@ class Runner:
             epoch=1, load_dataset=True
         )
 
-        self.model = TranslationModel(self.textData.word2index,
-                                      self.textData.index2word,
-                                      self.textData.word2index,
-                                      self.textData.index2word).to(args['device'])
+        self.model = TranslationModel(self.task.src_dict.indices,
+                                      self.task.src_dict.symbols,
+                                      self.task.tgt_dict.indices,
+                                      self.task.tgt_dict.symbols,).to(args['device'])
         self.sequence_generator = self.model.sequence_generator
         self.criterion = self.task.build_criterion(dictconfig.DictConfig({'_name': 'label_smoothed_cross_entropy', 'label_smoothing': 0.1, 'report_accuracy': False, 'ignore_prefix_size': 0, 'sentence_avg': False}))
         # self.model = torch.load(self.model_path.replace('model', 'model_'+'fw'), map_location=args['device'])

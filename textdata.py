@@ -334,8 +334,8 @@ class TextData_MT:
         word2index['<pad>'] = 1
         word2index['</s>'] = 2
         word2index['<unk>'] = 3
-        word2index['<sep>'] = 4
-        cnt = 5
+        # word2index['<sep>'] = 4
+        cnt = 4
         with open(vocfile, "r") as v:
 
             for line in v:
@@ -374,7 +374,7 @@ class TextData_MT:
                      for _,_,_,src, add, tgt in tqdm(self.datasets[setname]):
                         str_src = src[:1000]
                         for s in add:
-                            str_src +=  ['<sep>'] +  s
+                            str_src +=  ['<s>'] +  s
                         str_tgt = tgt[:1000]
                         src_h.write(' '.join(str_src) + '\n')
                         tgt_h.write(' '.join(str_tgt) + '\n')
