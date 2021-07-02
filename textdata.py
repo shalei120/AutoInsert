@@ -1,6 +1,7 @@
 
 import numpy as np
 import nltk  # For tokenize
+nltk.download('punkt')
 from nltk.probability import FreqDist
 from tqdm import tqdm  # Progress bar
 import pickle  # Saving the data
