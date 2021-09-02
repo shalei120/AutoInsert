@@ -25,8 +25,8 @@ class TransformerModel(nn.Module):
     def __init__(self,  enc_w2i, enc_i2w, dec_w2i, dec_i2w, padding_idx = 1, embedding_dim = args['embeddingSize']):
         super(TransformerModel, self).__init__()
 
-        self.embedding_src = nn.Embedding(args['vocabularySize'], args['embeddingSize']).to(args['device'])
-        self.embedding_tgt = nn.Embedding(args['vocabularySize'], args['embeddingSize']).to(args['device'])
+        self.embedding_src = nn.Embedding(args['vocabularySize_src'], args['embeddingSize']).to(args['device'])
+        self.embedding_tgt = nn.Embedding(args['vocabularySize_tgt'], args['embeddingSize']).to(args['device'])
         nn.init.normal_(self.embedding_src.weight, mean=0, std=embedding_dim ** -0.5)
         nn.init.constant_(self.embedding_src.weight[padding_idx], 0)
         nn.init.normal_(self.embedding_tgt.weight, mean=0, std=embedding_dim ** -0.5)

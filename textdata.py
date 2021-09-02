@@ -36,7 +36,7 @@ class TextData_MT:
     """
 
 
-    def __init__(self, corpusname, taskID = 1):
+    def __init__(self, corpusname, taskID = 1, withbpe = True):
         """Load all conversations
         Args:
             args: parameters of the model
@@ -45,7 +45,7 @@ class TextData_MT:
         self.bpe_tmp_filename = args['rootDir'] + 'bpe_tmp.txt'
         # Path variables
         self.tokenizer = word_tokenize
-
+        self.withbpe = withbpe
         if not os.path.exists(args['rootDir']):
             os.mkdir(args['rootDir'])
 
@@ -53,10 +53,10 @@ class TextData_MT:
 
         self.word2index = {}
         self.index2word = {}  # For a rapid conversion (Warning: If replace dict by list, modify the filtering to avoid linear complexity with del)
-
-        self.loadCorpus(corpusname)
-
-        self.write_fairseq_dataset()
+        # print('withboe  ',withbpe)
+        self.loadCorpus(withbpe)
+        if withbpe:
+            self.write_fairseq_dataset()
 
 
     def _printStats(self):
@@ -129,6 +129,47 @@ class TextData_MT:
 
         return batch
 
+    def _createBatch_withoutbpe(self, samples):
+        """Create a single batch from the list of sample. The batch size is automatically defined by the number of
+        samples given.
+        The inputs should already be inverted. The target should already have <go> and <eos>
+        Warning: This function should not make direct calls to args['batchSize'] !!!
+        Args:
+            samples (list<Obj>): a list of samples, each sample being on the form [input, target]
+        Return:
+            Batch: a batch object en
+        """
+
+        batch = Batch()
+        batchSize = len(samples)
+
+        maxlen_def = 800 #if setname == 'train' else 511
+
+        # Create the batch tensor
+        for i in range(batchSize):
+            # Unpack the sample
+            src_sample, add, tgt_sample = samples[i]
+            src_sample = src_sample.split()
+            # add = [a.split() for a in add]
+            tgt_sample = tgt_sample.split()
+            if len(src_sample) > maxlen_def:
+                src_sample = src_sample[:maxlen_def]
+            if len(tgt_sample) > maxlen_def:
+                tgt_sample = tgt_sample[:maxlen_def]
+
+            batch.encoderSeqs.append(' '.join(src_sample) + ' [SEP] '.join(add))
+
+            # print(batch.encoderSeqs[-1])
+            # exit(0)
+            batch.decoderSeqs.append(tgt_sample)  # Add the <go> and <eos> tokens
+            batch.targetSeqs.append(tgt_sample)  # Same as decoder, but shifted to the left (ignore the <go>)
+
+            assert len(batch.decoderSeqs[i]) <= maxlen_def +1
+
+
+
+        return batch
+
     def getBatches(self,setname = 'train'):
         """Prepare the batches for the current epoch
         Return:
@@ -150,11 +191,17 @@ class TextData_MT:
 
         for index, samples in enumerate(genNextSamples()):
             # print([self.index2word[id] for id in samples[5][0]], samples[5][2])
-            batch = self._createBatch(samples)
+            if self.withbpe:
+                batch = self._createBatch(samples)
+            else:
+                batch = self._createBatch_withoutbpe(samples)
+
             batches.append(batch)
 
         # print([self.index2word[id] for id in batches[2].encoderSeqs[5]], batches[2].raws[5])
         return batches
+
+
 
     def getSampleSize(self,setname):
         """Return the size of the dataset
@@ -176,119 +223,209 @@ class TextData_MT:
         for item in tar:
             tar.extract(item, extract_path)
 
-    def loadCorpus(self, corpusname):
+    def load_with_bpe(self):
+        files = os.listdir(self.corpusDir)
+
+        total_words = []
+
+        data_input_seqs = []
+        data_add_seqs = []
+        data_target_seqs = []
+        files = [f for f in files if 'json' in f]
+        files = sorted(files, key=lambda x: int(x.split('.')[0]))
+        for filename in files:
+            print(filename)
+
+            input_seq = ''
+            add_seqs = []
+            target_seq = ''
+            with open(self.corpusDir + filename, 'r') as src_handle:
+                data = json.load(src_handle)
+
+                for para in data['paragraphs']:
+                    for subsen_dict in para:
+                        if subsen_dict['type'] == '=' or subsen_dict['type'] == '-':
+                            input_seq += subsen_dict['text'].strip() + ' '
+                        elif subsen_dict['type'] == '+':
+                            add_seqs.append(subsen_dict['text'].strip())
+
+                        if subsen_dict['type'] == '=' or subsen_dict['type'] == '+':
+                            target_seq += subsen_dict['text'].strip() + ' '
+            input_seq = ' '.join(self.tokenizer(input_seq))
+            for i in range(len(add_seqs)):
+                add_seqs[i] = ' '.join(self.tokenizer(add_seqs[i]))
+            target_seq = ' '.join(self.tokenizer(target_seq))
+            data_input_seqs.append(input_seq)
+            data_add_seqs.append(add_seqs)
+            data_target_seqs.append(target_seq)
+
+        self.write_in_tmp_files(data_input_seqs, data_add_seqs, data_target_seqs)
+
+        learn_bpe([self.bpe_tmp_filename], args['rootDir'] + 'auto_insert.bpe', 37000, 6, True)
+        codes = codecs.open(args['rootDir'] + 'auto_insert.bpe', encoding='utf-8')
+        bpe = BPE(codes, separator='@@')
+
+        data = []
+
+        for input, add, target in zip(data_input_seqs, data_add_seqs, data_target_seqs):
+
+            input = bpe.process_line(input).split()
+            for i in range(len(add)):
+                add[i] = bpe.process_line(add[i]).split()
+                total_words.extend(add[i])
+            target = bpe.process_line(target).split()
+            total_words.extend(input)
+            total_words.extend(target)
+            data.append((input, add, target))
+
+        fdist = nltk.FreqDist(total_words)
+        sort_count = fdist.most_common(36000)
+        print('sort_count: ', len(sort_count))
+        with open(args['rootDir'] + "/autoinsert_voc.txt", "w") as v:
+            for w, c in tqdm(sort_count):
+                if w not in [' ', '', '\n']:
+                    v.write(w)
+                    v.write(' ')
+                    v.write(str(c))
+                    v.write('\n')
+
+            v.close()
+        os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt " + args['rootDir'] + "/fsdata/dict.en.txt")
+        os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt " + args['rootDir'] + "/fsdata/dict.de.txt")
+
+        self.word2index = self.read_word2vec(args['rootDir'] + "/autoinsert_voc.txt")
+        self.sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
+        print('sorted')
+        self.index2word = [w for w, n in self.sorted_word_index]
+        print('index2word')
+        self.index2word_set = set(self.index2word)
+        print('set')
+
+        # self.raw_sentences = copy.deepcopy(dataset)
+        random.shuffle(data)
+        datanum = len(data)
+        dataset = {}
+        dataset['train'] = data[:int(0.8 * datanum)]
+        dataset['valid'] = data[int(0.8 * datanum):int(0.9 * datanum)]
+        dataset['test'] = data[int(0.9 * datanum):]
+        for setname in ['train', 'valid', 'test']:
+            dataset[setname] = [
+                (self.TurnWordID(src), [self.TurnWordID(s) for s in add], self.TurnWordID(tgt), src, add, tgt) for
+                src, add, tgt in tqdm(dataset[setname])]
+
+        return dataset
+
+    def load_without_bpe(self):
+        files = os.listdir(self.corpusDir)
+
+        total_words = []
+
+        data_input_seqs = []
+        data_add_seqs = []
+        data_target_seqs = []
+        files = [f for f in files if 'json' in f]
+        files = sorted(files, key=lambda x: int(x.split('.')[0]))
+        for filename in files:
+            print(filename)
+
+            input_seq = ''
+            add_seqs = []
+            target_seq = ''
+            with open(self.corpusDir + filename, 'r') as src_handle:
+                data = json.load(src_handle)
+
+                for para in data['paragraphs']:
+                    for subsen_dict in para:
+                        if subsen_dict['type'] == '=' or subsen_dict['type'] == '-':
+                            input_seq += subsen_dict['text'].strip() + ' '
+                        elif subsen_dict['type'] == '+':
+                            add_seqs.append(subsen_dict['text'].strip())
+
+                        if subsen_dict['type'] == '=' or subsen_dict['type'] == '+':
+                            target_seq += subsen_dict['text'].strip() + ' '
+            input_seq = ' '.join(self.tokenizer(input_seq))
+            for i in range(len(add_seqs)):
+                add_seqs[i] = ' '.join(self.tokenizer(add_seqs[i]))
+            target_seq = ' '.join(self.tokenizer(target_seq))
+            data_input_seqs.append(input_seq)
+            data_add_seqs.append(add_seqs)
+            data_target_seqs.append(target_seq)
+
+        data = []
+
+        for input, add, target in zip(data_input_seqs, data_add_seqs, data_target_seqs):
+
+            data.append((input, add, target))
+
+        fdist = nltk.FreqDist(total_words)
+        sort_count = fdist.most_common(36000)
+        print('sort_count: ', len(sort_count))
+        with open(args['rootDir'] + "/autoinsert_nobpe_voc.txt", "w") as v:
+            for w, c in tqdm(sort_count):
+                if w not in [' ', '', '\n']:
+                    v.write(w)
+                    v.write(' ')
+                    v.write(str(c))
+                    v.write('\n')
+
+            v.close()
+        self.word2index = self.read_word2vec(args['rootDir'] + "/autoinsert_nobpe_voc.txt")
+        self.sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
+        print('sorted')
+        self.index2word = [w for w, n in self.sorted_word_index]
+        print('index2word')
+        self.index2word_set = set(self.index2word)
+        print('set')
+
+        # self.raw_sentences = copy.deepcopy(dataset)
+        random.shuffle(data)
+        datanum = len(data)
+        dataset = {}
+        dataset['train'] = data[:int(0.8 * datanum)]
+        dataset['valid'] = data[int(0.8 * datanum):int(0.9 * datanum)]
+        dataset['test'] = data[int(0.9 * datanum):]
+        # for setname in ['train', 'valid', 'test']:
+        #     dataset[setname] = [
+        #         (self.TurnWordID(src), [self.TurnWordID(s) for s in add], self.TurnWordID(tgt), src, add, tgt) for
+        #         src, add, tgt in tqdm(dataset[setname])]
+
+        return dataset
+    def loadCorpus(self, with_bpe = True):
         """Load/create the conversations data
         """
-        if args['server'] == 'dgx':
-            self.basedir = './.data/'
-        else:
-            self.basedir = '../'
+        # if args['server'] == 'dgx':
+        self.basedir = './.data/'
+        # else:
+        #     self.basedir = '../'
 
         if not os.path.exists(self.basedir):
             os.mkdir(self.basedir)
 
         self.corpusDir = self.basedir + 'dataset-v1/'
-        self.fullSamplesPath = args['rootDir'] + '/autoinsert.pkl'  # Full sentences length/vocab
+        # self.fullSamplesPath = args['rootDir'] + '/autoinsert.pkl'  # Full sentences length/vocab
+        # if args['task'] == 'hard':
+        #     self.fullSamplesPath = self.fullSamplesPath.replace('.pkl', '_hard.pkl')
+        # # print('wiht ', with_bpe)
+        # if not with_bpe:
+        #     self.fullSamplesPath = self.fullSamplesPath.replace('.pkl','_nobpe.pkl')
+        # print(self.fullSamplesPath)
+        # datasetExist = os.path.isfile(self.fullSamplesPath)
+        # if not datasetExist:  # First time we load the database: creating all files
+        print('Training data not found. Creating dataset...')
 
-        print(self.fullSamplesPath)
-        datasetExist = os.path.isfile(self.fullSamplesPath)
-        if not datasetExist:  # First time we load the database: creating all files
-            print('Training data not found. Creating dataset...')
-            files = os.listdir(self.corpusDir)
+        if with_bpe:
+            dataset = self.load_with_bpe()
+        else:
+            dataset = self.load_without_bpe()
 
-            total_words = []
-
-            data_input_seqs = []
-            data_add_seqs = []
-            data_target_seqs = []
-            files = [f for f in files if 'json'  in f]
-            files = sorted(files, key=lambda x:int(x.split('.')[0]))
-            for filename in files:
-                print(filename)
-
-                input_seq = ''
-                add_seqs = []
-                target_seq = ''
-                with open(self.corpusDir +filename, 'r') as src_handle:
-                    data = json.load(src_handle)
-
-                    for para in data['paragraphs']:
-                        for subsen_dict in para:
-                            if subsen_dict['type'] == '=' or subsen_dict['type'] == '-' :
-                                input_seq += subsen_dict['text'].strip() + ' '
-                            elif subsen_dict['type'] == '+':
-                                add_seqs.append(subsen_dict['text'].strip() )
-
-                            if subsen_dict['type'] == '=' or subsen_dict['type'] == '+':
-                                target_seq += subsen_dict['text'].strip()  + ' '
-                input_seq = ' '.join(self.tokenizer(input_seq))
-                for i in range(len(add_seqs)):
-                    add_seqs[i] = ' '.join(self.tokenizer(add_seqs[i]))
-                target_seq = ' '.join(self.tokenizer(target_seq))
-                data_input_seqs.append(input_seq)
-                data_add_seqs.append(add_seqs)
-                data_target_seqs.append(target_seq)
-
-            self.write_in_tmp_files(data_input_seqs, data_add_seqs, data_target_seqs)
-
-            learn_bpe([self.bpe_tmp_filename], args['rootDir'] + 'auto_insert.bpe', 37000, 6, True)
-            codes = codecs.open(args['rootDir'] + 'auto_insert.bpe', encoding='utf-8')
-            bpe = BPE(codes, separator='@@')
-
-            data=[]
-
-            for input,add,target in zip(data_input_seqs, data_add_seqs, data_target_seqs):
-
-                input = bpe.process_line(input).split()
-                for i in range(len(add)):
-                    add[i] = bpe.process_line(add[i]).split()
-                    total_words.extend(add[i])
-                target = bpe.process_line(target).split()
-                total_words.extend(input)
-                total_words.extend(target)
-                data.append((input,add,target))
-
-
-            fdist = nltk.FreqDist(total_words)
-            sort_count = fdist.most_common(36000)
-            print('sort_count: ', len(sort_count))
-            with open(args['rootDir'] + "/autoinsert_voc.txt", "w") as v:
-                for w, c in tqdm(sort_count):
-                    if w not in [' ', '', '\n']:
-                        v.write(w)
-                        v.write(' ')
-                        v.write(str(c))
-                        v.write('\n')
-
-                v.close()
-            os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt "+args['rootDir'] + "/fsdata/dict.en.txt")
-            os.system('cp ' + args['rootDir'] + "/autoinsert_voc.txt "+args['rootDir'] + "/fsdata/dict.de.txt")
-
-            self.word2index = self.read_word2vec(args['rootDir'] + "/autoinsert_voc.txt")
-            self.sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
-            print('sorted')
-            self.index2word = [w for w, n in self.sorted_word_index]
-            print('index2word')
-            self.index2word_set = set(self.index2word)
-            print('set')
-
-            # self.raw_sentences = copy.deepcopy(dataset)
-            random.shuffle(data)
-            datanum = len(data)
-            dataset={}
-            dataset['train'] = data[:int(0.8 * datanum)]
-            dataset['valid'] = data[int(0.8 * datanum):int(0.9 * datanum)]
-            dataset['test'] = data[int(0.9 * datanum):]
-            for setname in ['train', 'valid', 'test']:
-                dataset[setname] = [(self.TurnWordID(src),[self.TurnWordID(s) for s in add] ,self.TurnWordID(tgt), src, add, tgt) for src,add, tgt in tqdm(dataset[setname])]
-            self.datasets = dataset
+        self.datasets = dataset
 
 
             # Saving
-            print('Saving dataset...')
-            self.saveDataset(self.fullSamplesPath)  # Saving tf samples
-        else:
-            self.loadDataset(self.fullSamplesPath)
+        print('Saving dataset...')
+        #     self.saveDataset(self.fullSamplesPath)  # Saving tf samples
+        # else:
+        #     self.loadDataset(self.fullSamplesPath)
 
     def write_in_tmp_files(self, data_input_seqs, data_add_seqs, data_target_seqs):
         with open(self.bpe_tmp_filename, 'w') as h:
@@ -335,8 +472,8 @@ class TextData_MT:
         word2index['<pad>'] = 1
         word2index['</s>'] = 2
         word2index['<unk>'] = 3
-        # word2index['<sep>'] = 4
-        cnt = 4
+        word2index['<sep>'] = 4
+        cnt = 5
         with open(vocfile, "r") as v:
 
             for line in v:
@@ -365,6 +502,9 @@ class TextData_MT:
 
     def write_fairseq_dataset(self):
         folder = args['rootDir'] + '/fsdata/'
+        if args['task'] == 'hard':
+            folder = args['rootDir'] + '/fsdata_hard/'
+
         if not os.path.exists(folder):
             os.mkdir(folder)
         src_len = []
@@ -374,8 +514,9 @@ class TextData_MT:
                 with open(folder + setname + '.' + 'en', 'w') as tgt_h:
                      for _,_,_,src, add, tgt in tqdm(self.datasets[setname]):
                         str_src = src[:1000]
-                        for s in add:
-                            str_src +=  ['<s>'] +  s
+                        if args['task'] == 'hard':
+                            for s in add:
+                                str_src +=  ['<s>'] +  s
                         str_tgt = tgt[:1000]
                         src_h.write(' '.join(str_src) + '\n')
                         tgt_h.write(' '.join(str_tgt) + '\n')
@@ -389,5 +530,18 @@ class TextData_MT:
 
 
 if __name__ == '__main__':
+    import argparse
+    from argparse import Namespace
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--task', '-t')
+
+    cmdargs = parser.parse_args()
+
+    if cmdargs.task is None:
+        args['task'] = 'easy'
+    else:
+        args['task'] = cmdargs.task
+    print(args['task'])
     args['server'] = 'dgx'
     TextData_MT('MT')
