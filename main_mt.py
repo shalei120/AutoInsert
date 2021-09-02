@@ -49,6 +49,7 @@ parser.add_argument('--server', '-s')
 parser.add_argument('--embeddingsize', '-emb')
 parser.add_argument('--layernum', '-layer')
 parser.add_argument('--nhead', '-nhead')
+parser.add_argument('--task', '-t')
 
 cmdargs = parser.parse_args()
 
@@ -96,6 +97,10 @@ if cmdargs.nhead is None:
     args['nhead'] = 1
 else:
     args['nhead'] = int(cmdargs.nhead)
+if cmdargs.task is None:
+    args['task'] = 'easy'
+else:
+    args['task'] = cmdargs.task
 
 def asMinutes(s):
     m = math.floor(s / 60)
@@ -186,9 +191,10 @@ class Runner:
         # self.task.src_dict.symbols = self.textData.index2word
         # self.textData.word2index[args['typename']][self.l2]= self.task.tgt_dict.indices
         # self.textData.index2word[args['typename']][self.l2] =  self.task.tgt_dict.symbols
-        args['vocabularySize'] = self.textData.getVocabularySize()
+        args['vocabularySize_src'] = len(self.task.src_dict.symbols)
+        args['vocabularySize_tgt'] = len(self.task.tgt_dict.symbols)
 
-        print(args['vocabularySize'])
+        print(args['vocabularySize_src'], args['vocabularySize_tgt'])
         print(args)
         self.task.load_dataset('valid', combine=False, epoch=1)
         self.train_itr = self.get_train_iterator(
@@ -390,7 +396,7 @@ class Runner:
             BLEU, bleu_ori, valid_losses = self.Cal_BLEU_for_dataset('test')
             if BLEU > min_BLEU or min_BLEU == -1:
                 print('BLEU = ', BLEU, bleu_ori, '>= min_BLEU (', min_BLEU, '), saving model...')
-                # torch.save(self.model, self.model_path.replace('model', 'model_'+args['LMtype']+'_'+args['corpus'] + '_'+str(args['maxLength'])+'_'+str(args['numLayers'])+'_'+str(args['embeddingSize'])))
+                torch.save(self.model, self.model_path.replace('model', 'model_'+args['LMtype']+'_'+args['corpus'] + '_'+str(args['maxLength'])+'_'+str(args['numLayers'])+'_'+str(args['embeddingSize'])))
                 min_BLEU = BLEU
             lr = self.lr_step(epoch, scheduler,valid_losses[0])
             print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid BLEU = ', BLEU, bleu_ori,'best BLEU: ', min_BLEU)
@@ -435,7 +441,7 @@ class Runner:
         end = time.time()
         print('Test time: ', time.strftime("%H:%M:%S", time.gmtime(end-start )))
 
-    def Cal_BLEU_for_dataset(self, datasetname):
+    def Cal_BLEU_for_dataset(self, datasetname, print_test_files = True):
         EVAL_BLEU_ORDER = 4
         if not hasattr(self, 'testbatches' ):
             self.testbatches = {}
@@ -449,6 +455,9 @@ class Runner:
         gold_ans = []
         rec = None
         valid_loss = []
+
+        if print_test_files:
+            record_file = open(args['rootDir'] + 'record_test.txt', 'w')
 
         valid_epoch_itr = self.get_valid_iterator('valid')
         print(type(valid_epoch_itr),dir(valid_epoch_itr))
@@ -481,6 +490,26 @@ class Runner:
                 # loss, sample_size, logging_output = self.task.valid_step(
                 #     sample, self.model, self.criterion
                 # )
+                if print_test_files:
+                    pred_ans_this = [h.split() for h in logging_output['hyps']]
+                    gold_ans_this = [[r.split()] for r in logging_output['refs']]
+                    bleus=[]
+                    for pat, gat in zip(pred_ans_this, gold_ans_this):
+
+                        b = corpus_bleu([gat], [pat])
+                        bleus.append(b)
+
+                    for i in range(len(logging_output['hyps'])):
+                        record_file.write(str(logging_output['score'][i]))
+                        record_file.write('\t')
+                        record_file.write(str(bleus[i]))
+                        record_file.write('\t')
+                        record_file.write(logging_output['hyps'][i])
+                        record_file.write('\t')
+                        record_file.write(logging_output['refs'][i])
+                        record_file.write('\n')
+
+
                 pred_ans.extend([h.split() for h in logging_output['hyps']])
                 gold_ans.extend([[r.split()] for r in logging_output['refs']])
                 valid_loss.append(loss)
@@ -591,7 +620,7 @@ class Runner:
                 self.task.max_positions(),
                 # self.model.max_positions(),
             ),
-            ignore_invalid_inputs=False,
+            ignore_invalid_inputs=True,
             required_batch_size_multiple=8,
             seed=1,
             num_shards=self.data_parallel_world_size,

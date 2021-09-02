@@ -227,12 +227,13 @@ class TranslationModel(nn.Module):
         # with torch.no_grad():
         # #     loss, sample_size, logging_output, net_output  = self.build(x)
         #     net_output  = self.build(x)
-        bleu, hyps,refs = self._inference_with_bleu(self.sequence_generator, sample, self.trans_net)
+        bleu, hyps,refs, gen_scores = self._inference_with_bleu(self.sequence_generator, sample, self.trans_net)
         logging_output = {}
         logging_output["_bleu_sys_len"] = bleu.sys_len
         logging_output["_bleu_ref_len"] = bleu.ref_len
         logging_output["hyps"] = hyps
         logging_output["refs"] = refs
+        logging_output["score"] = gen_scores
         assert len(bleu.counts) == EVAL_BLEU_ORDER
         for i in range(EVAL_BLEU_ORDER):
             logging_output["_bleu_counts_" + str(i)] = bleu.counts[i]
@@ -319,6 +320,7 @@ class TranslationModel(nn.Module):
                 [model], sample, prefix_tokens=None, constraints=None
             )
         hyps, refs = [], []
+        gen_scores = []
         # print([len(g) for g in gen_out])
         for i in range(len(gen_out)):
             h = decode(gen_out[i][0]["tokens"])
@@ -330,13 +332,14 @@ class TranslationModel(nn.Module):
                 )
             ref_endpos = r.index('</s>')
             r = r[:ref_endpos]
+            gen_scores.append(gen_out[i][0]["score"].item())
             hyps.append(h)
             refs.append(r)
         # if self.cfg.eval_bleu_print_samples:
         #     logger.info("example hypothesis: " + hyps[0])
         #     logger.info("example reference: " + refs[0])
 
-        print("example hypothesis: " + hyps[0])
+        print("example hypothesis: " + str(gen_scores[0]) + '  '+ hyps[0])
         print("example reference: " + refs[0])
         res = None
         if args['eval_tokenized_bleu']:
@@ -344,7 +347,7 @@ class TranslationModel(nn.Module):
         else:
             res =  sacrebleu.corpus_bleu(hyps, [refs])
 
-        return res, hyps, refs
+        return res, hyps, refs, gen_scores
 
     def Make_string(
         self,tgt_dict,
