@@ -402,30 +402,30 @@ class TextData_MT:
             os.mkdir(self.basedir)
 
         self.corpusDir = self.basedir + 'dataset-v1/'
-        # self.fullSamplesPath = args['rootDir'] + '/autoinsert.pkl'  # Full sentences length/vocab
-        # if args['task'] == 'hard':
-        #     self.fullSamplesPath = self.fullSamplesPath.replace('.pkl', '_hard.pkl')
-        # # print('wiht ', with_bpe)
+        self.fullSamplesPath = args['rootDir'] + '/autoinsert.pkl'  # Full sentences length/vocab
+        if args['task'] == 'hard':
+            self.fullSamplesPath = self.fullSamplesPath.replace('.pkl', '_hard.pkl')
+        # print('wiht ', with_bpe)
         # if not with_bpe:
         #     self.fullSamplesPath = self.fullSamplesPath.replace('.pkl','_nobpe.pkl')
-        # print(self.fullSamplesPath)
-        # datasetExist = os.path.isfile(self.fullSamplesPath)
-        # if not datasetExist:  # First time we load the database: creating all files
-        print('Training data not found. Creating dataset...')
+        print(self.fullSamplesPath)
+        datasetExist = os.path.isfile(self.fullSamplesPath)
+        if not datasetExist:  # First time we load the database: creating all files
+            print('Training data not found. Creating dataset...')
 
-        if with_bpe:
-            dataset = self.load_with_bpe()
-        else:
-            dataset = self.load_without_bpe()
+            if with_bpe:
+                dataset = self.load_with_bpe()
+            else:
+                dataset = self.load_without_bpe()
 
-        self.datasets = dataset
+            self.datasets = dataset
 
 
             # Saving
-        print('Saving dataset...')
-        #     self.saveDataset(self.fullSamplesPath)  # Saving tf samples
-        # else:
-        #     self.loadDataset(self.fullSamplesPath)
+            print('Saving dataset...')
+            self.saveDataset(self.fullSamplesPath)  # Saving tf samples
+        else:
+            self.loadDataset(self.fullSamplesPath)
 
     def write_in_tmp_files(self, data_input_seqs, data_add_seqs, data_target_seqs):
         with open(self.bpe_tmp_filename, 'w') as h:
@@ -507,26 +507,27 @@ class TextData_MT:
 
         if not os.path.exists(folder):
             os.mkdir(folder)
-        src_len = []
-        tgt_len = []
-        for setname in ['train', 'valid', 'test']:
-            with open(folder + setname + '.' + 'de', 'w') as src_h:
-                with open(folder + setname + '.' + 'en', 'w') as tgt_h:
-                     for _,_,_,src, add, tgt in tqdm(self.datasets[setname]):
-                        str_src = src[:1000]
-                        if args['task'] == 'hard':
-                            for s in add:
-                                str_src +=  ['<s>'] +  s
-                        str_tgt = tgt[:1000]
-                        src_h.write(' '.join(str_src) + '\n')
-                        tgt_h.write(' '.join(str_tgt) + '\n')
-                        src_len.append(len(str_src))
-                        tgt_len.append(len(str_tgt))
+            src_len = []
+            tgt_len = []
+            for setname in ['train', 'valid', 'test']:
+                with open(folder + setname + '.' + 'de', 'w') as src_h:
+                    with open(folder + setname + '.' + 'en', 'w') as tgt_h:
+                         for _,_,_,src, add, tgt in tqdm(self.datasets[setname]):
+                            str_src = src[:1000]
+                            if args['task'] == 'hard':
+                                for s in add:
+                                    str_src +=  ['<s>'] +  s
+                            str_tgt = tgt[:1000]
+                            src_h.write(' '.join(str_src) + '\n')
+                            tgt_h.write(' '.join(str_tgt) + '\n')
+                            src_len.append(len(str_src))
+                            tgt_len.append(len(str_tgt))
 
-        # cfdist = FreqDist(src_len)
-        # cfdist.plot()
-        print(src_len)
-        print(tgt_len)
+
+            # cfdist = FreqDist(src_len)
+            # cfdist.plot()
+            print(src_len)
+            print(tgt_len)
 
 
 if __name__ == '__main__':

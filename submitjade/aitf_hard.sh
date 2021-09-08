@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --nodes=1
-#SBATCH --partition=devel
+#SBATCH --partition=small
 #SBATCH --job-name=AItf-hard
 #SBATCH --gres=gpu:1
 
