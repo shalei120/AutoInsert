@@ -50,16 +50,14 @@ parser.add_argument('--embeddingsize', '-emb')
 parser.add_argument('--layernum', '-layer')
 parser.add_argument('--nhead', '-nhead')
 parser.add_argument('--task', '-t')
+parser.add_argument('--retrain', '-r')
 
 cmdargs = parser.parse_args()
 
-usegpu = True
 
 if cmdargs.gpu is None:
-    usegpu = False
     args['device'] = 'cpu'
 else:
-    usegpu = True
     args['device'] = 'cuda:' + str(cmdargs.gpu)
 
 if cmdargs.batch is None:
@@ -101,6 +99,10 @@ if cmdargs.task is None:
     args['task'] = 'easy'
 else:
     args['task'] = cmdargs.task
+if cmdargs.retrain is None:
+    args['retrain'] = True
+else:
+    args['retrain'] = not (cmdargs.retrain == 'False'  )
 
 def asMinutes(s):
     m = math.floor(s / 60)
@@ -200,18 +202,22 @@ class Runner:
         self.train_itr = self.get_train_iterator(
             epoch=1, load_dataset=True
         )
+            self.model = TranslationModel(self.task.src_dict.indices,
+                                          self.task.src_dict.symbols,
+                                          self.task.tgt_dict.indices,
+                                          self.task.tgt_dict.symbols,).to(args['device'])
+            self.sequence_generator = self.model.sequence_generator
+            self.criterion = self.task.build_criterion(dictconfig.DictConfig({'_name': 'label_smoothed_cross_entropy', 'label_smoothing': 0.1, 'report_accuracy': False, 'ignore_prefix_size': 0, 'sentence_avg': False}))
+            # self.model = torch.load(self.model_path.replace('model', 'model_'+'fw'), map_location=args['device'])
+            params = sum([np.prod(p.size()) for p in self.model.parameters()])
+            print(params, sum([sys.getsizeof(p.storage()) for p in self.model.parameters()])/1000000, 'm')
 
-        self.model = TranslationModel(self.task.src_dict.indices,
-                                      self.task.src_dict.symbols,
-                                      self.task.tgt_dict.indices,
-                                      self.task.tgt_dict.symbols,).to(args['device'])
-        self.sequence_generator = self.model.sequence_generator
-        self.criterion = self.task.build_criterion(dictconfig.DictConfig({'_name': 'label_smoothed_cross_entropy', 'label_smoothing': 0.1, 'report_accuracy': False, 'ignore_prefix_size': 0, 'sentence_avg': False}))
-        # self.model = torch.load(self.model_path.replace('model', 'model_'+'fw'), map_location=args['device'])
-        params = sum([np.prod(p.size()) for p in self.model.parameters()])
-        print(params, sum([sys.getsizeof(p.storage()) for p in self.model.parameters()])/1000000, 'm')
-        self.trainMT()     # contain  model saving
-        self.evaluateRandomly()
+        if args['retrain']:
+            self.trainMT()     # contain  model saving
+        else:
+            self.model.load_state_dict(torch.load(self.model_path.replace('model', 'model_'+args['LMtype']+'_'+args['task'] + '_'+str(args['maxLength'])+'_'+str(args['numLayers'])+'_'+str(args['embeddingSize'])), map_location=args['device']))
+
+        # self.evaluateRandomly()
         self.testMT()
 
     def lr_step_begin_epoch(self, epoch, lr_scheduler):
@@ -396,7 +402,7 @@ class Runner:
             BLEU, bleu_ori, valid_losses = self.Cal_BLEU_for_dataset('test')
             if BLEU > min_BLEU or min_BLEU == -1:
                 print('BLEU = ', BLEU, bleu_ori, '>= min_BLEU (', min_BLEU, '), saving model...')
-                torch.save(self.model, self.model_path.replace('model', 'model_'+args['LMtype']+'_'+args['corpus'] + '_'+str(args['maxLength'])+'_'+str(args['numLayers'])+'_'+str(args['embeddingSize'])))
+                torch.save(self.model.state_dict(), self.model_path.replace('model', 'model_'+args['LMtype']+'_'+args['task'] + '_'+str(args['maxLength'])+'_'+str(args['numLayers'])+'_'+str(args['embeddingSize'])))
                 min_BLEU = BLEU
             lr = self.lr_step(epoch, scheduler,valid_losses[0])
             print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid BLEU = ', BLEU, bleu_ori,'best BLEU: ', min_BLEU)
@@ -448,7 +454,7 @@ class Runner:
         if datasetname not in self.testbatches:
             self.testbatches[datasetname] = self.textData.getBatches(setname=datasetname)
         self.model.eval()
-        self.criterion.eval()
+        # self.criterion.eval()
         num = 0
         ave_loss = 0
         pred_ans = []  # bleu
